@@ -33,11 +33,16 @@ public class ExportJobStateService {
         return exportJobRepository.claim(jobId) == 1;
     }
 
+    /**
+     * @return 완료가 기록되었으면 true. job 이 더 이상 processing 이 아니면(watchdog 등이 먼저 정리) false
+     */
     @Transactional
-    public void markDone(long jobId, String filePath, int rowCount) {
+    public boolean markDone(long jobId, String filePath, int rowCount) {
         if (exportJobRepository.markDone(jobId, filePath, rowCount) == 0) {
             log.warn("Export job {} was not in processing state when marking done", jobId);
+            return false;
         }
+        return true;
     }
 
     @Transactional

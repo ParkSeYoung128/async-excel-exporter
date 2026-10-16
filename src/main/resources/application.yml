@@ -38,7 +38,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # metrics: export.duration / export.rows 와 JVM 메모리 지표를 측정에 사용
+        include: health, metrics
 
 app:
   export:
@@ -47,3 +48,5 @@ app:
     queue-capacity: 10
     # 종료 시 실행 중인 작업 대기 시간. lifecycle 30초 + 25초 < compose stop_grace_period 60초
     shutdown-await-seconds: 25
+    # 주문 스트리밍 조회 시 한 번에 가져오는 행 수 (0 이면 전체 적재가 되므로 금지)
+    fetch-size: 1000

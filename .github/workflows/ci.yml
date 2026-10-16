@@ -62,6 +62,46 @@ jobs:
           echo "orders rows: ${count}"
           test "${count}" -eq 100000
 
+      # 실제 엑셀 생성까지 end-to-end 검증: 요청 → done 대기 → 행 수 → 컨테이너 안 파일 존재
+      - name: Verify Excel export end-to-end
+        run: |
+          job_id=$(curl -fsS --max-time 5 -X POST http://localhost:8080/api/export-jobs | jq -r '.jobId')
+          echo "job_id: ${job_id}"
+
+          deadline=$((SECONDS + 300))
+          while true; do
+            if (( SECONDS >= deadline )); then echo "Export did not finish within 300s: ${job:-no response}"; exit 1; fi
+            # 0.5 CPU 에서 생성 중 응답이 늦을 수 있으므로 조회 실패는 즉시 실패시키지 않고 재시도한다 (bash -e 회피)
+            if ! job=$(curl -fsS --max-time 5 "http://localhost:8080/api/export-jobs/${job_id}"); then
+              echo "Status query failed. Retrying..."
+              sleep 3
+              continue
+            fi
+            status=$(echo "${job}" | jq -r '.status')
+            if [ "${status}" = "done" ]; then break; fi
+            if [ "${status}" = "failed" ]; then echo "Export failed: ${job}"; exit 1; fi
+            sleep 3
+          done
+          echo "${job}" | jq .
+
+          row_count=$(echo "${job}" | jq -r '.rowCount')
+          file_path=$(echo "${job}" | jq -r '.filePath')
+          test "${row_count}" -eq 100000
+          docker compose exec -T app test -s "${file_path}"
+          docker compose exec -T app ls -l "${file_path}"
+
+      # cgroup v2 의 memory.peak: 컨테이너 시작 이후 메모리 사용 최대값(샘플링 누락 없음).
+      # 10만 건 생성을 거친 뒤의 최대값이 한도(1GiB)의 80% 미만인지 회귀 검사한다.
+      - name: Verify container memory peak
+        run: |
+          peak=$(docker compose exec -T app cat /sys/fs/cgroup/memory.peak)
+          limit=$(docker compose exec -T app cat /sys/fs/cgroup/memory.max)
+          peak_mib=$((peak / 1024 / 1024))
+          limit_mib=$((limit / 1024 / 1024))
+          echo "memory.peak: ${peak_mib}MiB / limit: ${limit_mib}MiB"
+          echo "### Container memory peak: ${peak_mib}MiB / ${limit_mib}MiB" >> "$GITHUB_STEP_SUMMARY"
+          test "${peak}" -lt $((limit * 8 / 10))
+
       - name: Show container logs
         if: failure()
         run: docker compose logs --no-color
