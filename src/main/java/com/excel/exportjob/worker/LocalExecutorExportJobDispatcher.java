@@ -1,6 +1,8 @@
 package com.excel.exportjob.worker;
 
 import com.excel.exportjob.config.ExportExecutorConfig;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,12 @@ public class LocalExecutorExportJobDispatcher implements ExportJobDispatcher {
     private final TaskExecutor exportExecutor;
     private final ExportJobProcessor processor;
 
+    /**
+     * 큐에 들어갔거나 실행 중인 job. 재제출 스케줄러가 큐에서 기다리는 job 을 매 주기 다시 넣어
+     * 큐가 중복으로 채워지는 것을 막는다. (그래도 중복 처리는 claim 이 최종적으로 막는다)
+     */
+    private final Set<Long> inFlight = ConcurrentHashMap.newKeySet();
+
     public LocalExecutorExportJobDispatcher(
             @Qualifier(ExportExecutorConfig.EXPORT_EXECUTOR) TaskExecutor exportExecutor,
             ExportJobProcessor processor) {
@@ -30,12 +38,27 @@ public class LocalExecutorExportJobDispatcher implements ExportJobDispatcher {
      */
     @Override
     public boolean dispatch(long jobId) {
+        if (!inFlight.add(jobId)) {
+            return true;
+        }
         try {
-            exportExecutor.execute(() -> processor.process(jobId));
+            exportExecutor.execute(() -> {
+                try {
+                    processor.process(jobId);
+                } finally {
+                    inFlight.remove(jobId);
+                }
+            });
             return true;
         } catch (RejectedExecutionException e) {
+            inFlight.remove(jobId);
             log.warn("Export queue is full. Job {} stays pending until resubmitted", jobId);
             return false;
         }
+    }
+
+    @Override
+    public int inFlightCount() {
+        return inFlight.size();
     }
 }

@@ -10,7 +10,11 @@ package com.excel.exportjob.worker;
 public interface ExportJobDispatcher {
 
     /**
-     * @return 실행 큐에 들어갔으면 true. 큐가 가득 차 거부되면 false (job 은 pending 으로 남는다)
+     * @return job 이 실행될 예정이면 true (이번에 큐에 넣었거나, 이미 큐·실행 중).
+     *         큐가 가득 차 거부되면 false (job 은 pending 으로 남는다)
      */
     boolean dispatch(long jobId);
+
+    /** 큐에 들어갔거나 실행 중인 job 수 */
+    int inFlightCount();
 }
