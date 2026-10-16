@@ -1,5 +1,7 @@
 package com.excel.common.error;
 
+import com.excel.exportjob.application.ExportFileNotFoundException;
+import com.excel.exportjob.application.ExportFileNotReadyException;
 import com.excel.exportjob.application.ExportJobNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -17,6 +19,24 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleNotFound(ExportJobNotFoundException e) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
         problem.setTitle("Export job not found");
+        problem.setProperty("jobId", e.getJobId());
+        return problem;
+    }
+
+    /** 작업은 있지만 아직 완료되지 않음: 요청 자체는 올바르나 현재 상태와 충돌하므로 409. */
+    @ExceptionHandler(ExportFileNotReadyException.class)
+    public ProblemDetail handleFileNotReady(ExportFileNotReadyException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        problem.setTitle("Export file not ready");
+        problem.setProperty("jobId", e.getJobId());
+        problem.setProperty("status", e.getStatus().dbValue());
+        return problem;
+    }
+
+    @ExceptionHandler(ExportFileNotFoundException.class)
+    public ProblemDetail handleFileNotFound(ExportFileNotFoundException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+        problem.setTitle("Export file not found");
         problem.setProperty("jobId", e.getJobId());
         return problem;
     }
