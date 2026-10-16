@@ -74,8 +74,11 @@ class StreamingExcelExportFileGeneratorTest {
         assertThat(sheet.dataRows()).isEqualTo(dbCount);
         assertThat(sheet.header()).containsExactly(
                 "주문ID", "주문자", "상품명", "카테고리", "결제금액(원)", "주문상태", "주문일시");
-        assertThat(sheet.firstDataRow()).isEqualTo(expectedRow(1));
-        assertThat(sheet.lastDataRow()).isEqualTo(expectedRow(dbCount));
+        // id 가 1부터 빈틈없이 이어진다고 가정하지 않고 실제 최소·최대 id 로 비교한다
+        int firstId = jdbcTemplate.queryForObject("SELECT min(id) FROM orders", Integer.class);
+        int lastId = jdbcTemplate.queryForObject("SELECT max(id) FROM orders", Integer.class);
+        assertThat(sheet.firstDataRow()).isEqualTo(expectedRow(firstId));
+        assertThat(sheet.lastDataRow()).isEqualTo(expectedRow(lastId));
     }
 
     @Test
