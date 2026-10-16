@@ -1,5 +1,6 @@
 package com.excel.exportjob.worker;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -12,8 +13,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.excel.exportjob.application.ExportJobStateService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ExportJobProcessorTest {
 
@@ -59,5 +63,46 @@ class ExportJobProcessorTest {
 
         assertThatCode(() -> processor.process(1L)).doesNotThrowAnyException();
         verifyNoInteractions(generator);
+    }
+
+    @Test
+    @DisplayName("완료 기록 중 예외가 나면 생성된 파일을 지우고 failed 로 기록한다")
+    void markDoneFailure_deletesFileAndMarksFailed(@TempDir Path dir) throws Exception {
+        Path file = Files.createFile(dir.resolve("1.xlsx"));
+        given(stateService.claim(1L)).willReturn(true);
+        given(generator.generate(1L)).willReturn(new ExportResult(file.toString(), 100));
+        given(stateService.markDone(1L, file.toString(), 100)).willThrow(new IllegalStateException("db down"));
+
+        processor.process(1L);
+
+        assertThat(file).doesNotExist();
+        verify(stateService).markFailed(org.mockito.ArgumentMatchers.eq(1L), anyString());
+    }
+
+    @Test
+    @DisplayName("이미 processing 이 아니어서 완료가 기록되지 않으면 생성된 파일만 지운다")
+    void markDoneNotApplied_deletesFile(@TempDir Path dir) throws Exception {
+        Path file = Files.createFile(dir.resolve("1.xlsx"));
+        given(stateService.claim(1L)).willReturn(true);
+        given(generator.generate(1L)).willReturn(new ExportResult(file.toString(), 100));
+        given(stateService.markDone(1L, file.toString(), 100)).willReturn(false);
+
+        processor.process(1L);
+
+        assertThat(file).doesNotExist();
+        verify(stateService, never()).markFailed(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("완료가 기록되면 파일을 유지한다")
+    void markDoneApplied_keepsFile(@TempDir Path dir) throws Exception {
+        Path file = Files.createFile(dir.resolve("1.xlsx"));
+        given(stateService.claim(1L)).willReturn(true);
+        given(generator.generate(1L)).willReturn(new ExportResult(file.toString(), 100));
+        given(stateService.markDone(1L, file.toString(), 100)).willReturn(true);
+
+        processor.process(1L);
+
+        assertThat(file).exists();
     }
 }

@@ -4,6 +4,9 @@ import com.excel.exportjob.application.ExportJobStateService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +81,9 @@ public class ExportJobProcessor {
         log.info("Export job {} started", jobId);
         try {
             ExportResult result = generator.generate(jobId);
-            stateService.markDone(jobId, result.filePath(), result.rowCount());
+            if (!recordDone(jobId, result)) {
+                return;
+            }
             Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
             doneTimer.record(elapsed);
             exportedRows.increment(result.rowCount());
@@ -89,6 +94,37 @@ public class ExportJobProcessor {
             failedTimer.record(Duration.ofNanos(System.nanoTime() - startedAt));
             log.error("Export job {} failed", jobId, e);
             markFailedSafely(jobId, e);
+        }
+    }
+
+    /**
+     * 완료 기록이 실패하면 방금 만든 파일을 지워, done 이 아닌 job 에 딸린 고아 파일이 남지 않게 한다.
+     * <ul>
+     *   <li>예외(DB 장애 등): 파일 삭제 후 예외를 다시 던져 failed 로 기록되게 한다.</li>
+     *   <li>0건 갱신(이미 processing 이 아님, 예: watchdog 이 먼저 failed 처리): 파일만 삭제한다.</li>
+     * </ul>
+     *
+     * @return 완료가 기록되었으면 true
+     */
+    private boolean recordDone(long jobId, ExportResult result) {
+        boolean recorded;
+        try {
+            recorded = stateService.markDone(jobId, result.filePath(), result.rowCount());
+        } catch (RuntimeException e) {
+            deleteQuietly(result.filePath());
+            throw e;
+        }
+        if (!recorded) {
+            deleteQuietly(result.filePath());
+        }
+        return recorded;
+    }
+
+    private static void deleteQuietly(String filePath) {
+        try {
+            Files.deleteIfExists(Path.of(filePath));
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to delete orphan export file {}", filePath, e);
         }
     }
 
