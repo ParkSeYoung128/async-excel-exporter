@@ -1,6 +1,7 @@
 package com.excel.exportjob.application;
 
 import com.excel.exportjob.domain.ExportJobRepository;
+import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,26 @@ public class ExportJobStateService {
         if (exportJobRepository.markFailed(jobId, truncate(errorMessage)) == 0) {
             log.warn("Export job {} was not in processing state when marking failed", jobId);
         }
+    }
+
+    /**
+     * 재시작 복구: 이전 프로세스가 남긴 processing 을 pending(시도 횟수 남음) 또는 failed(소진)로 정리한다.
+     *
+     * @return 정리된 job 수
+     */
+    @Transactional
+    public int recoverInterrupted(int maxAttempts) {
+        return exportJobRepository.recoverInterrupted(maxAttempts);
+    }
+
+    /**
+     * watchdog: processing 이 제한 시간을 넘긴 job 을 failed 로 정리한다.
+     *
+     * @return 정리된 job 수
+     */
+    @Transactional
+    public int failTimedOut(Duration processingTimeout) {
+        return exportJobRepository.failTimedOut(processingTimeout.toSeconds());
     }
 
     private static String truncate(String message) {

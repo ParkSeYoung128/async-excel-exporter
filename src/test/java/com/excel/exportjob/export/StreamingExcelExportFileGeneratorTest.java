@@ -120,7 +120,8 @@ class StreamingExcelExportFileGeneratorTest {
     }
 
     private static ExportProperties properties(Path dir) {
-        return new ExportProperties(dir, 10, 25, 1000);
+        return new ExportProperties(dir, 10, 25, 1000,
+                Duration.ofSeconds(10), Duration.ofMinutes(10), Duration.ofMinutes(5), 3);
     }
 
     private static Path createTempDir() {
