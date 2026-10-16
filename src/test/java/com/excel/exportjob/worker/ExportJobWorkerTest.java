@@ -25,9 +25,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 
 @IntegrationTest
 @Import(ControllableGeneratorConfig.class)
+// 재제출 스케줄러가 테스트가 직접 넣은 pending job 을 먼저 집어가지 않도록 주기를 길게 둔다
+@TestPropertySource(properties = "app.export.maintenance-interval=1h")
 class ExportJobWorkerTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);

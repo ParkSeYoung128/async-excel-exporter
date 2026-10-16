@@ -24,10 +24,14 @@ import org.springframework.web.context.WebApplicationContext;
 
 /**
  * 실행 큐가 가득 찬 상황: 큐 용량 0 + 워커가 첫 job 에 붙잡힌 상태에서 두 번째 요청을 보낸다.
+ * 거부된 job 은 pending 으로 남았다가, 워커가 비면 재제출 스케줄러(1초 주기)가 다시 넣어 처리된다.
  */
 @IntegrationTest
 @Import(ControllableGeneratorConfig.class)
-@TestPropertySource(properties = "app.export.queue-capacity=0")
+@TestPropertySource(properties = {
+        "app.export.queue-capacity=0",
+        "app.export.maintenance-interval=1s"
+})
 class ExportJobDispatchRejectionTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
@@ -56,7 +60,7 @@ class ExportJobDispatchRejectionTest {
     }
 
     @Test
-    @DisplayName("실행 큐가 가득 차도 요청은 202 로 접수되고 job 은 pending 으로 남는다")
+    @DisplayName("실행 큐가 가득 차도 요청은 202 로 접수되고, 거부된 job 은 pending 으로 남았다가 재제출되어 처리된다")
     void rejectedDispatch_keepsJobPendingAndReturnsAccepted() throws Exception {
         generator.block();
 
@@ -68,12 +72,13 @@ class ExportJobDispatchRejectionTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.jobId").value(2))
                 .andExpect(jsonPath("$.status").value("pending"));
+        assertThat(statusOf(2)).isEqualTo("pending");
 
         generator.release();
         await().atMost(TIMEOUT).until(() -> "done".equals(statusOf(1)));
 
-        // 거부된 job 은 유실되지 않고 pending 으로 남아 재제출을 기다린다 (재제출 스케줄러는 #11)
-        assertThat(statusOf(2)).isEqualTo("pending");
+        // 거부된 job 은 유실되지 않고, 워커가 비면 재제출되어 끝내 처리된다
+        await().atMost(TIMEOUT).until(() -> "done".equals(statusOf(2)));
     }
 
     private String statusOf(long jobId) {

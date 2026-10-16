@@ -50,3 +50,11 @@ app:
     shutdown-await-seconds: 25
     # 주문 스트리밍 조회 시 한 번에 가져오는 행 수 (0 이면 전체 적재가 되므로 금지)
     fetch-size: 1000
+    # pending 재제출 + 장기 processing 정리 주기
+    maintenance-interval: 10s
+    # 10만 건 생성은 수 초 수준(로컬 3~8초). 이보다 훨씬 길면 워커 정지로 보고 failed 처리
+    processing-timeout: 10m
+    # 생성 조회 중 DB 명령 하나의 최대 대기 시간 (락 대기 등으로 멈추는 것 방지)
+    query-timeout: 5m
+    # 재시작으로 중단된 job 의 최대 시도 횟수
+    max-attempts: 3
