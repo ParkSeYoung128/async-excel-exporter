@@ -56,6 +56,12 @@ jobs:
           done
           echo "Application is UP after ${SECONDS}s"
 
+      - name: Verify seed data
+        run: |
+          count=$(docker compose exec -T db psql -U exporter -d exporter -tAc "SELECT count(*) FROM orders")
+          echo "orders rows: ${count}"
+          test "${count}" -eq 100000
+
       - name: Show container logs
         if: failure()
         run: docker compose logs --no-color
