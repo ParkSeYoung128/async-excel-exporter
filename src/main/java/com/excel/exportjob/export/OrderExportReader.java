@@ -32,10 +32,12 @@ public class OrderExportReader {
 
     private final JdbcTemplate jdbcTemplate;
     private final int fetchSize;
+    private final String statementTimeout;
 
     public OrderExportReader(JdbcTemplate jdbcTemplate, ExportProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.fetchSize = properties.fetchSize();
+        this.statementTimeout = properties.queryTimeout().toMillis() + "ms";
     }
 
     /**
@@ -43,6 +45,10 @@ public class OrderExportReader {
      */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public int streamAll(Consumer<OrderRow> consumer) {
+        // 이 트랜잭션에만 적용(set_config 의 is_local = true). 커서로 나눠 가져올 때 DB 명령 하나가
+        // 락 대기 등으로 응답 없이 멈추는 것을 막는다. 작업 전체 시간은 watchdog(processing-timeout)이 제한한다.
+        jdbcTemplate.queryForObject("SELECT set_config('statement_timeout', ?, true)", String.class, statementTimeout);
+
         int[] count = {0};
         jdbcTemplate.query(
                 connection -> {
