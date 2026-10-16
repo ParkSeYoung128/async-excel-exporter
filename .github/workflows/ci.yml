@@ -39,21 +39,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 평가 환경과 동일하게 docker compose up --build 한 번으로 기동 (deploy.resources 제한 포함)
+      # 채점 환경과 동일하게 docker compose up --build 한 번으로 기동 (deploy.resources 제한 포함)
       - name: Build and start services
         run: docker compose up -d --build
 
+      # 요청 하나가 멈춰도 전체 대기가 300초를 넘지 않도록 요청별 타임아웃 + 전체 마감 시간을 둔다
       - name: Wait for application health
         run: |
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
-              echo "Application is UP after $((i * 5))s"
-              exit 0
+          deadline=$((SECONDS + 300))
+          until curl -fsS --max-time 5 http://localhost:8080/actuator/health | grep -q '"status":"UP"'; do
+            if (( SECONDS >= deadline )); then
+              echo "Application did not become healthy within 300s"
+              exit 1
             fi
             sleep 5
           done
-          echo "Application did not become healthy within 300s"
-          exit 1
+          echo "Application is UP after ${SECONDS}s"
 
       - name: Show container logs
         if: failure()
