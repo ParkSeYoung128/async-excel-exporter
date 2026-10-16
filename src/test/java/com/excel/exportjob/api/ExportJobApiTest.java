@@ -55,7 +55,8 @@ class ExportJobApiTest {
                 .andExpect(jsonPath("$.jobId").value(1))
                 .andExpect(jsonPath("$.status").value("pending"))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty())
-                .andExpect(jsonPath("$.startedAt").doesNotExist());
+                .andExpect(jsonPath("$.startedAt").doesNotExist())
+                .andExpect(jsonPath("$.downloadUrl").doesNotExist());
 
         String status = jdbcTemplate.queryForObject(
                 "SELECT status FROM export_job WHERE id = 1", String.class);
