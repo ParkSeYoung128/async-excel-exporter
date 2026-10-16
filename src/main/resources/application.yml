@@ -43,3 +43,5 @@ management:
 app:
   export:
     dir: ${EXPORT_DIR:/data/exports}
+    # 진짜 대기열은 DB(pending). 메모리 큐는 작게 두고, 넘친 작업은 pending 으로 남겨 재제출한다
+    queue-capacity: 10
