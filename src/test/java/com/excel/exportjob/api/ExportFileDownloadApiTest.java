@@ -7,7 +7,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.excel.exportjob.maintenance.ExportJobRecovery;
 import com.excel.exportjob.worker.ExportJobDispatcher;
 import com.excel.support.IntegrationTest;
 import java.io.IOException;
@@ -47,6 +46,8 @@ class ExportFileDownloadApiTest {
     private static final Path OUTSIDE_DIR = createTempDir("exports-outside");
     private static final byte[] CONTENT = "PK\u0003\u0004fake-xlsx-content".getBytes(StandardCharsets.ISO_8859_1);
     private static final String FINISHED_AT = "2026-10-17 14:30:05";
+    // ExportJobRecovery.POI_TEMP_DIR 는 패키지 전용이라 값을 그대로 쓴다
+    private static final String POI_TEMP_DIR = ".poi-tmp";
 
     @DynamicPropertySource
     static void exportDir(DynamicPropertyRegistry registry) {
@@ -144,7 +145,7 @@ class ExportFileDownloadApiTest {
                 writeFile(OUTSIDE_DIR.resolve("traversal.xlsx"));
                 yield EXPORT_DIR.resolve("../" + OUTSIDE_DIR.getFileName() + "/traversal.xlsx");
             }
-            case "poi-temp" -> writeFile(EXPORT_DIR.resolve(ExportJobRecovery.POI_TEMP_DIR).resolve("sheet.xlsx"));
+            case "poi-temp" -> writeFile(EXPORT_DIR.resolve(POI_TEMP_DIR).resolve("sheet.xlsx"));
             case "writing-temp" -> writeFile(EXPORT_DIR.resolve("2.xlsx.tmp"));
             case "symlink" -> {
                 Path target = writeFile(OUTSIDE_DIR.resolve("linked.xlsx"));
