@@ -10,8 +10,10 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     # 포트는 호스트에 노출하지 않는다 (평가 환경의 5432 충돌 방지). 접속은 docker compose exec db psql
+    # 초기화(initdb) 중의 임시 서버는 Unix 소켓에서만 수신하므로, TCP(-h 127.0.0.1)로 확인해야
+    # 초기화가 끝난 최종 서버가 뜬 뒤에만 healthy 가 된다
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
