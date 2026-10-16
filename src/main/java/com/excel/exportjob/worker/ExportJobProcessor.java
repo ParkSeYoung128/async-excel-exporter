@@ -4,6 +4,8 @@ import com.excel.exportjob.application.ExportJobStateService;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,13 +19,37 @@ public class ExportJobProcessor {
     private final ExportJobStateService stateService;
     private final ExportFileGenerator generator;
 
+    private volatile boolean shuttingDown;
+
     public ExportJobProcessor(ExportJobStateService stateService, ExportFileGenerator generator) {
         this.stateService = stateService;
         this.generator = generator;
     }
 
+    /**
+     * 종료가 시작되면 큐에 남아 있던 작업은 새로 시작하지 않는다.
+     * claim 전에 건너뛰므로 job 은 pending 으로 남고, 재시작 후 재제출된다.
+     */
+    @EventListener(ContextClosedEvent.class)
+    public void onShutdown() {
+        shuttingDown = true;
+    }
+
     public void process(long jobId) {
-        if (!stateService.claim(jobId)) {
+        if (shuttingDown) {
+            log.info("Shutting down. Export job {} stays pending", jobId);
+            return;
+        }
+
+        boolean claimed;
+        try {
+            claimed = stateService.claim(jobId);
+        } catch (Exception e) {
+            // claim 이 실패하면 상태는 바뀌지 않았으므로 job 은 pending 으로 남는다
+            log.error("Failed to claim export job {}. It stays pending", jobId, e);
+            return;
+        }
+        if (!claimed) {
             // 중복 제출이거나 이미 처리된 job. 정상적인 경로이므로 조용히 건너뛴다.
             log.debug("Export job {} is not pending. Skipped", jobId);
             return;
@@ -40,7 +66,20 @@ public class ExportJobProcessor {
         } catch (Exception e) {
             // Error(OOM 등)는 잡지 않는다: JVM 상태를 신뢰할 수 없으므로 프로세스 재시작 후 복구(#11)에 맡긴다.
             log.error("Export job {} failed", jobId, e);
-            stateService.markFailed(jobId, e.getClass().getSimpleName() + ": " + e.getMessage());
+            markFailedSafely(jobId, e);
+        }
+    }
+
+    /**
+     * 실패 기록까지 실패해도(DB 장애 등) 예외를 executor 로 전파하지 않고 로그로 남긴다.
+     * 이 경우 job 은 processing 에 남으며, 재시작 복구(#11)가 정리한다.
+     */
+    private void markFailedSafely(long jobId, Exception cause) {
+        try {
+            stateService.markFailed(jobId, cause.getClass().getSimpleName() + ": " + cause.getMessage());
+        } catch (Exception e) {
+            e.addSuppressed(cause);
+            log.error("Failed to mark export job {} as failed. It stays processing until recovery", jobId, e);
         }
     }
 

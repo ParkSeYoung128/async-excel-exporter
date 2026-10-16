@@ -45,3 +45,5 @@ app:
     dir: ${EXPORT_DIR:/data/exports}
     # 진짜 대기열은 DB(pending). 메모리 큐는 작게 두고, 넘친 작업은 pending 으로 남겨 재제출한다
     queue-capacity: 10
+    # 종료 시 실행 중인 작업 대기 시간. lifecycle 30초 + 25초 < compose stop_grace_period 60초
+    shutdown-await-seconds: 25
