@@ -13,12 +13,15 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param shutdownAwaitSeconds 종료 시 실행 중인 작업을 기다리는 최대 시간(초).
  *                      Tomcat graceful 종료(spring.lifecycle 30초) + 이 값이
  *                      compose stop_grace_period(60초) 안에 들어와야 SIGKILL 전에 끝난다.
+ * @param fetchSize     주문 스트리밍 조회 시 DB 에서 한 번에 가져오는 행 수.
+ *                      작으면 왕복이 늘고, 크면 메모리 피크가 커진다.
  */
 @ConfigurationProperties(prefix = "app.export")
 public record ExportProperties(
         @DefaultValue("/data/exports") Path dir,
         @DefaultValue("10") int queueCapacity,
-        @DefaultValue("25") int shutdownAwaitSeconds
+        @DefaultValue("25") int shutdownAwaitSeconds,
+        @DefaultValue("1000") int fetchSize
 ) {
 
     /**
@@ -30,6 +33,10 @@ public record ExportProperties(
         if (shutdownAwaitSeconds < 0) {
             throw new IllegalArgumentException(
                     "app.export.shutdown-await-seconds must be >= 0, but was " + shutdownAwaitSeconds);
+        }
+        // pgjdbc 에서 fetchSize 0 은 "전체를 한 번에 가져오기"라 스트리밍이 무력화되고 10만 건이 메모리에 올라간다
+        if (fetchSize <= 0) {
+            throw new IllegalArgumentException("app.export.fetch-size must be > 0, but was " + fetchSize);
         }
     }
 }

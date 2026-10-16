@@ -14,7 +14,7 @@ class ExportPropertiesTest {
     @Test
     @DisplayName("음수 종료 대기 시간은 거부한다")
     void negativeShutdownAwait_isRejected() {
-        assertThatThrownBy(() -> new ExportProperties(DIR, 10, -1))
+        assertThatThrownBy(() -> new ExportProperties(DIR, 10, -1, 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("shutdown-await-seconds");
     }
@@ -22,6 +22,14 @@ class ExportPropertiesTest {
     @Test
     @DisplayName("종료 대기 0초와 큐 용량 0은 허용한다")
     void zeroValues_areAllowed() {
-        assertThatCode(() -> new ExportProperties(DIR, 0, 0)).doesNotThrowAnyException();
+        assertThatCode(() -> new ExportProperties(DIR, 0, 0, 1000)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("fetchSize 0 이하는 스트리밍을 무력화하므로 거부한다")
+    void nonPositiveFetchSize_isRejected() {
+        assertThatThrownBy(() -> new ExportProperties(DIR, 10, 25, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("fetch-size");
     }
 }
