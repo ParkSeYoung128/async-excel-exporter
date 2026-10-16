@@ -20,4 +20,16 @@ public record ExportProperties(
         @DefaultValue("10") int queueCapacity,
         @DefaultValue("25") int shutdownAwaitSeconds
 ) {
+
+    /**
+     * 음수 대기 시간은 executor 가 예외 없이 "대기 안 함"으로 처리해 종료 대기 계약이 조용히 깨지므로 기동 시점에 거부한다.
+     * 0 은 "대기하지 않음"을 뜻하는 유효한 설정으로 허용한다.
+     * queueCapacity 는 0 이하를 SynchronousQueue(대기 큐 없음)로 처리하는 지원 설정이라 검증하지 않는다.
+     */
+    public ExportProperties {
+        if (shutdownAwaitSeconds < 0) {
+            throw new IllegalArgumentException(
+                    "app.export.shutdown-await-seconds must be >= 0, but was " + shutdownAwaitSeconds);
+        }
+    }
 }
