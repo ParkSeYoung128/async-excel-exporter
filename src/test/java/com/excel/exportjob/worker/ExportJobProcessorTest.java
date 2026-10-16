@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.excel.exportjob.application.ExportJobStateService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ class ExportJobProcessorTest {
 
     private final ExportJobStateService stateService = mock(ExportJobStateService.class);
     private final ExportFileGenerator generator = mock(ExportFileGenerator.class);
-    private final ExportJobProcessor processor = new ExportJobProcessor(stateService, generator);
+    private final ExportJobProcessor processor = new ExportJobProcessor(stateService, generator, new SimpleMeterRegistry());
 
     @Test
     @DisplayName("종료가 시작되면 큐에 남은 작업은 claim 하지 않아 pending 으로 남는다")

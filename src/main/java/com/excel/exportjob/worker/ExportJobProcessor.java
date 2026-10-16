@@ -1,6 +1,9 @@
 package com.excel.exportjob.worker;
 
 import com.excel.exportjob.application.ExportJobStateService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,12 +21,28 @@ public class ExportJobProcessor {
 
     private final ExportJobStateService stateService;
     private final ExportFileGenerator generator;
+    private final Timer doneTimer;
+    private final Timer failedTimer;
+    private final Counter exportedRows;
 
     private volatile boolean shuttingDown;
 
-    public ExportJobProcessor(ExportJobStateService stateService, ExportFileGenerator generator) {
+    public ExportJobProcessor(ExportJobStateService stateService, ExportFileGenerator generator,
+                              MeterRegistry meterRegistry) {
         this.stateService = stateService;
         this.generator = generator;
+        // /actuator/metrics/export.duration?tag=outcome:done 으로 생성 시간 분포를 확인한다
+        this.doneTimer = Timer.builder("export.duration")
+                .description("Excel export duration")
+                .tag("outcome", "done")
+                .register(meterRegistry);
+        this.failedTimer = Timer.builder("export.duration")
+                .description("Excel export duration")
+                .tag("outcome", "failed")
+                .register(meterRegistry);
+        this.exportedRows = Counter.builder("export.rows")
+                .description("Rows written to Excel files")
+                .register(meterRegistry);
     }
 
     /**
@@ -61,10 +80,13 @@ public class ExportJobProcessor {
             ExportResult result = generator.generate(jobId);
             stateService.markDone(jobId, result.filePath(), result.rowCount());
             Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+            doneTimer.record(elapsed);
+            exportedRows.increment(result.rowCount());
             log.info("Export job {} done: rows={}, elapsed={}ms, rowsPerSec={}",
                     jobId, result.rowCount(), elapsed.toMillis(), rowsPerSecond(result.rowCount(), elapsed));
         } catch (Exception e) {
             // Error(OOM 등)는 잡지 않는다: JVM 상태를 신뢰할 수 없으므로 프로세스 재시작 후 복구(#11)에 맡긴다.
+            failedTimer.record(Duration.ofNanos(System.nanoTime() - startedAt));
             log.error("Export job {} failed", jobId, e);
             markFailedSafely(jobId, e);
         }
