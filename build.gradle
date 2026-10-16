@@ -30,6 +30,8 @@ dependencies {
     // 운영과 같은 PostgreSQL + 같은 init SQL 로 통합 테스트 (H2 등 대체 DB 사용 안 함)
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
+    // 비동기 처리 결과를 고정 sleep 없이 조건이 충족될 때까지 대기
+    testImplementation 'org.awaitility:awaitility'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
