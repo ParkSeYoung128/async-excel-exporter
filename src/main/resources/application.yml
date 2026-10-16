@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: async-excel-exporter
+  # 로컬 실행 기본값. 컨테이너에서는 SPRING_DATASOURCE_* 환경변수가 덮어쓴다.
+  datasource:
+    url: jdbc:postgresql://localhost:5432/exporter
+    username: exporter
+    password: exporter
+    hikari:
+      # 워커 1개가 작업 내내 1개를 점유하므로 API 용 여유를 남긴 최소 크기
+      maximum-pool-size: 5
+  jpa:
+    # 요청 처리 내내 DB 커넥션을 붙잡지 않도록 비활성화
+    open-in-view: false
+    hibernate:
+      # 스키마는 init SQL 이 소유한다. 테이블 생성(#2) 이후 validate 로 전환
+      ddl-auto: none
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      # 기본 200개는 0.5 CPU / 1GB 환경에 과하므로 스레드 스택 메모리를 줄인다
+      max: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  export:
+    dir: ${EXPORT_DIR:/data/exports}
