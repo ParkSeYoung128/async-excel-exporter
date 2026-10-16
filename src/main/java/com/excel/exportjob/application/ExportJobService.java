@@ -2,6 +2,7 @@ package com.excel.exportjob.application;
 
 import com.excel.exportjob.domain.ExportJob;
 import com.excel.exportjob.domain.ExportJobRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -19,18 +20,23 @@ public class ExportJobService {
             Sort.Order.desc("id"));
 
     private final ExportJobRepository exportJobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ExportJobService(ExportJobRepository exportJobRepository) {
+    public ExportJobService(ExportJobRepository exportJobRepository, ApplicationEventPublisher eventPublisher) {
         this.exportJobRepository = exportJobRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
-     * 작업을 pending 으로 등록만 하고 즉시 반환한다. 실제 생성은 백그라운드에서 처리한다 (#9).
+     * 작업을 pending 으로 등록만 하고 즉시 반환한다. 실제 생성은 백그라운드 워커가 처리한다.
+     * 이벤트는 커밋 후에 전달되므로, 워커가 아직 커밋되지 않은 job 을 조회하는 일이 없다.
      * 서버 측 중복 제거는 하지 않는다: 요청마다 개별 job 으로 대기열에 쌓인다.
      */
     @Transactional
     public ExportJob create() {
-        return exportJobRepository.save(ExportJob.pending());
+        ExportJob job = exportJobRepository.save(ExportJob.pending());
+        eventPublisher.publishEvent(new ExportJobCreatedEvent(job.getId()));
+        return job;
     }
 
     @Transactional(readOnly = true)
