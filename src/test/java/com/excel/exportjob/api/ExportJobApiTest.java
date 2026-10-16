@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.excel.exportjob.worker.ExportJobDispatcher;
 import com.excel.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,12 +17,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+/**
+ * API 계층만 검증한다. 워커로의 전달은 막아 job 이 pending 으로 유지되게 한다
+ * (비동기 처리 검증은 ExportJobWorkerTest).
+ */
 @IntegrationTest
 class ExportJobApiTest {
+
+    @MockitoBean
+    ExportJobDispatcher dispatcher;
 
     @Autowired
     WebApplicationContext context;
