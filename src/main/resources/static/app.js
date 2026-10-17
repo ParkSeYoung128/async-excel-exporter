@@ -4,7 +4,9 @@
  * 엑셀 생성 작업 목록 페이지.
  *
  * 폴링 규칙
- *  - 진행 중(pending/processing) 작업이 보이면 2초, 없으면 10초 간격으로 갱신한다.
+ *  - 진행 중(pending/processing) 작업이 보이면 2초 간격으로 갱신한다.
+ *  - 진행 중 작업이 없으면 자동 갱신을 멈춘다 (유휴 페이지가 서버를 계속 호출하지 않도록).
+ *    생성 요청, 새로고침 버튼, 탭 재표시 때 조회를 다시 시작한다.
  *  - 응답을 받은 뒤에 다음 요청을 예약하므로(setTimeout) 요청이 겹치지 않는다.
  *  - 탭이 숨겨지면 멈추고, 다시 보이면 즉시 갱신한다.
  *  - 실패가 이어지면 간격을 2배씩 늘린다 (최대 30초).
@@ -17,7 +19,6 @@
 const API = '/api/export-jobs';
 const PAGE_SIZE = 20;
 const ACTIVE_INTERVAL_MS = 2000;
-const IDLE_INTERVAL_MS = 10000;
 const MAX_ERROR_INTERVAL_MS = 30000;
 const TOAST_MS = 2500;
 const COLUMN_COUNT = 9;
@@ -75,8 +76,8 @@ async function refresh() {
     render(data);
     state.failures = 0;
     hideError();
-    nextDelay = hasActiveJob(data.content) ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
-    updateStatusLine(data.content, nextDelay);
+    nextDelay = hasActiveJob(data.content) ? ACTIVE_INTERVAL_MS : null;
+    updateStatusLine(data.content);
   } catch (e) {
     state.failures += 1;
     nextDelay = Math.min(ACTIVE_INTERVAL_MS * 2 ** state.failures, MAX_ERROR_INTERVAL_MS);
@@ -95,9 +96,10 @@ async function refresh() {
   schedule(nextDelay);
 }
 
+/** delay 가 null 이면 예약하지 않는다 (진행 중 작업 없음). */
 function schedule(delay) {
   clearTimeout(state.timer);
-  if (document.hidden) {
+  if (delay == null || document.hidden) {
     return;
   }
   state.timer = setTimeout(refresh, delay);
@@ -203,10 +205,19 @@ function elapsedCell(startedAt, finishedAt) {
 
 function statusCell(job) {
   const badge = span(STATUS_LABELS[job.status] ?? job.status, `badge badge-${job.status}`);
-  if (job.status === 'failed' && job.errorMessage) {
-    badge.title = job.errorMessage;
+  if (job.status !== 'failed' || !job.errorMessage) {
+    return td(badge);
   }
-  return td(badge);
+  // 실패 사유는 키보드로도 열 수 있도록 <details> 로 제공한다 (title 툴팁은 마우스로만 보임)
+  const summary = document.createElement('summary');
+  summary.title = '실패 사유 보기';
+  summary.append(badge);
+  const details = document.createElement('details');
+  details.className = 'failure';
+  details.append(summary, paragraph(job.errorMessage, 'failure-message'));
+  const cell = td(details);
+  cell.className = 'status-cell';
+  return cell;
 }
 
 function rowCountCell(rowCount) {
@@ -284,11 +295,13 @@ function downloadIcon() {
   return svg;
 }
 
-function updateStatusLine(jobs, nextDelay) {
+function updateStatusLine(jobs) {
   const active = jobs.filter((job) => ACTIVE_STATUSES.has(job.status)).length;
-  const progress = active > 0 ? `진행 중 ${active}건` : '진행 중인 작업 없음';
+  const progress = active > 0
+    ? `진행 중 ${active}건 · ${ACTIVE_INTERVAL_MS / 1000}초마다 갱신`
+    : '진행 중인 작업 없음 · 자동 갱신 멈춤';
   el.liveIndicator.className = active > 0 ? 'live-indicator is-active' : 'live-indicator';
-  el.statusLine.textContent = `${progress} · ${nextDelay / 1000}초마다 갱신 · 마지막 ${formatClock(new Date())}`;
+  el.statusLine.textContent = `${progress} · 마지막 ${formatClock(new Date())}`;
 }
 
 // ---------- 표시 형식 ----------

@@ -322,7 +322,35 @@ th.action, td.action { text-align: right; }
 .badge-processing { background: var(--processing-bg); color: var(--processing); }
 .badge-processing::before { animation: pulse 1.2s ease-in-out infinite; }
 .badge-done       { background: var(--done-bg);       color: var(--done); }
-.badge-failed     { background: var(--failed-bg);     color: var(--failed); cursor: help; }
+.badge-failed     { background: var(--failed-bg);     color: var(--failed); }
+
+/* 실패 사유: <details> 로 접고 펼친다 (키보드 Enter/Space 로도 열림) */
+td.status-cell { padding-top: 8px; padding-bottom: 8px; }
+.failure summary { display: inline-flex; list-style: none; cursor: pointer; border-radius: 999px; }
+.failure summary::-webkit-details-marker { display: none; }
+.failure summary .badge::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  transition: transform 0.15s;
+}
+.failure[open] summary .badge::after { transform: translateY(1px) rotate(-135deg); }
+.failure-message {
+  max-width: 280px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--failed-bg);
+  color: var(--failed);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 .path {
   display: inline-block;
