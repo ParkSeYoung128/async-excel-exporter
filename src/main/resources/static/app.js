@@ -23,11 +23,12 @@ const MAX_ERROR_INTERVAL_MS = 30000;
 const TOAST_MS = 2500;
 const COLUMN_COUNT = 9;
 const ACTIVE_STATUSES = new Set(['pending', 'processing']);
-const STATUS_LABELS = {
-  pending: '대기',
-  processing: '처리 중',
-  done: '완료',
-  failed: '실패',
+// 배지에는 명세의 상태 값(pending/processing/done/failed)을 그대로 보여 주고, 한국어 설명은 툴팁으로 제공한다
+const STATUS_DESCRIPTIONS = {
+  pending: '대기 중 — 접수되어 워커 실행을 기다리는 중',
+  processing: '처리 중 — 엑셀 파일 생성 중',
+  done: '완료 — 파일 생성 완료, 다운로드 가능',
+  failed: '실패 — 상태를 눌러 실패 사유 확인',
 };
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -204,8 +205,9 @@ function elapsedCell(startedAt, finishedAt) {
 }
 
 function statusCell(job) {
-  const badge = span(STATUS_LABELS[job.status] ?? job.status, `badge badge-${job.status}`);
+  const badge = span(job.status, `badge badge-${job.status}`);
   if (job.status !== 'failed' || !job.errorMessage) {
+    badge.title = STATUS_DESCRIPTIONS[job.status] ?? '';
     return td(badge);
   }
   // 실패 사유는 키보드로도 열 수 있도록 <details> 로 제공한다 (title 툴팁은 마우스로만 보임)

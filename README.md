@@ -4,11 +4,27 @@
 생성 요청에는 즉시 응답(202)하고, 실제 파일 생성은 백그라운드 워커가 처리합니다.
 진행 상태(pending → processing → done / failed)와 시작·완료 시각, 파일 경로는 DB 에 기록되고, 목록 화면에서 폴링으로 확인합니다.
 
-![작업 목록 화면](docs/images/list-page.png)
+![데이터 요청 목록 화면](docs/images/list-page.png)
 
 - 10만 건 기준 생성 시간 약 2초(워밍업 후), 100만 건도 약 16초
 - 0.5 CPU / 1GiB 컨테이너에서 **JVM 실사용 메모리가 데이터 건수와 무관하게 약 310MiB 로 일정** (10만 → 100만 건, 스트리밍 조회 + SXSSF)
 - 재시작·중단·장시간 정체에도 작업이 유실되거나 영원히 processing 으로 남지 않음
+
+### 과제 요구사항 대응
+
+| 요구사항 | 구현 | 위치 |
+|---|---|---|
+| 요청 즉시 응답, 생성은 백그라운드 | `POST` 가 202 반환, 커밋 후 전용 워커 스레드로 전달 | 5.1 |
+| job 상태 pending / processing / done / failed | DB CHECK 제약 + 조건부 UPDATE 로 전이 | 5.2, 4장 상태도 |
+| 시작·완료 시간 DB 기록 | `started_at`(claim 시), `finished_at`(done·failed 모두) — DB `now()` 기준 KST | 5.4 |
+| 완료 후 파일 경로 DB 기록 | `file_path` 기록, done 이면 경로 필수(DB 제약) | 5.4 |
+| 단일 백엔드 컨테이너, 리소스 고정값 | `app` 1개, limits 0.5 / 1G, reservations 0.25 / 512M (변경 없음) | `docker-compose.yml` |
+| `docker compose up --build` 한 번으로 실행 | DB health 확인 후 앱 기동, 외부 계정·서비스 의존 없음 | 1장 |
+| 시드 10만 건 자동 삽입, 명세 스키마 | 첫 기동 시 `db/init` 실행 (`orders`: id/user_name/product_name/category/amount/status/order_date) | `db/init` |
+| '데이터 요청 목록' 페이지 | job_id, 요청일시, 시작시간, 완료시간, 상태, 파일경로 표 + '엑셀 생성 요청' 버튼 | 5.7 |
+| 요청 후 상태 확인 | 실시간 폴링 (진행 중일 때 2초) | 5.7 |
+| README: 실행 방법, 기술 스택 선택 이유, 설계 고민 | 1장, 3장, 5장 | |
+| 구현하지 못한 부분과 고도화 기록 | 요구사항 외 고도화, 측정하지 않은 항목, 한계와 개선 방향 | 6장, 7장, 9장 |
 
 ---
 
@@ -18,15 +34,11 @@
 
 ```bash
 docker compose up --build -d
+until curl -fs localhost:8080/actuator/health | grep -q UP; do sleep 2; done; echo READY
 ```
 
-앱이 뜰 때까지 기다린 뒤(첫 빌드는 1~2분) 브라우저에서 엽니다.
-
-```bash
-curl -s localhost:8080/actuator/health
-```
-
-`{"status":"UP"}` 이 나오면 **http://localhost:8080** 에 접속해 "엑셀 생성 요청" 버튼을 누르면 됩니다.
+`up -d` 는 컨테이너를 띄우자마자 끝나므로, 앱(Spring Boot)이 요청을 받을 준비가 될 때까지 두 번째 줄로 기다립니다. 첫 빌드는 이미지와 의존성을 받느라 수 분이 걸릴 수 있습니다.
+`READY` 가 출력되면 **http://localhost:8080** 에 접속해 "엑셀 생성 요청" 버튼을 누르면 됩니다.
 
 | 구성 | 내용 |
 |---|---|
@@ -43,6 +55,33 @@ docker compose down -v
 
 > DB 포트(5432)는 호스트에 노출하지 않습니다. 평가 환경에 이미 PostgreSQL 이 떠 있어도 포트 충돌로 기동이 실패하지 않게 하기 위함입니다.
 > DB 를 직접 보려면 `docker compose exec db psql -U exporter -d exporter`.
+
+### 동작 확인
+
+화면에서 버튼을 누르면 상태가 `pending → processing → done` 으로 바뀌고, 완료되면 다운로드 링크가 생깁니다. 화면 밖에서 직접 확인하려면 아래 명령을 차례로 실행합니다.
+
+1. 시드 데이터 건수 (100000)
+2. job 의 상태·시작/완료 시간·파일 경로가 DB 에 기록됐는지
+3. 파일이 컨테이너 볼륨에 실제로 있는지
+4. API 로 요청하고, 상태를 조회하고, 파일 받기
+
+```bash
+docker compose exec db psql -U exporter -d exporter -c "SELECT count(*) FROM orders"
+docker compose exec db psql -U exporter -d exporter -c "SELECT id, status, created_at, started_at, finished_at, file_path FROM export_job ORDER BY id"
+docker compose exec app ls -l /data/exports
+curl -s -X POST localhost:8080/api/export-jobs
+curl -s localhost:8080/api/export-jobs/1
+curl -OJ localhost:8080/api/export-jobs/1/file
+```
+
+### 문제가 생기면
+
+| 증상 | 확인 |
+|---|---|
+| `curl` 이 빈 응답 / connection refused | 앱이 아직 기동 중입니다. 위의 `until …` 명령으로 기다리거나 `docker compose logs -f app` 에서 `Started AsyncExcelExporterApplication` 을 확인 |
+| `port is already allocated` (8080) | 8080 을 쓰는 다른 프로세스를 종료한 뒤 다시 실행 |
+| 이전 실행 데이터가 남아 있음 | `docker compose down -v` 로 볼륨까지 지운 뒤 다시 실행 (시드는 볼륨이 비어 있을 때만 실행됨) |
+| 작업이 failed | 화면에서 상태를 누르면 실패 사유가 보이고, 자세한 내용은 `docker compose logs app` |
 
 ---
 
@@ -202,7 +241,29 @@ DB 의 `file_path` 를 그대로 믿지 않고, 정규화한 실제 경로가 **
 
 ---
 
-## 6. 측정 결과
+## 6. 요구사항 외 고도화와 판단 근거
+
+요구사항을 충족한 뒤 추가한 것들입니다. 모두 "고정 리소스 단일 컨테이너에서 작업이 유실·중복·오염되지 않게"라는 같은 기준으로 판단했습니다.
+
+| 추가한 것 | 왜 했는지 |
+|---|---|
+| 결과 파일 다운로드 API (`/file`) | 파일 경로만 보여 주면 사용자가 결과를 받을 방법이 없음. 경로 검증으로 임시 파일·디렉터리 밖 노출 차단 (5.6) |
+| 조건부 UPDATE 로 상태 전이 (claim) | 같은 job 이 두 번 실행되면 파일이 겹쳐 써지고 시간이 덮어써짐. 락 없이 DB 한 문장으로 원자성 확보 (5.2) |
+| 커밋 후 이벤트로 워커 전달 | 커밋 전에 워커가 job 을 찾지 못하는 경쟁 제거 (5.1) |
+| 재시작 복구 + 시도 횟수 제한 | 처리 중 재시작되면 job 이 영원히 processing 으로 남음. 매번 죽는 job 의 무한 반복도 차단 (5.5) |
+| watchdog (10분 초과 processing → failed) | 워커가 멈춰도 상태가 영원히 진행 중으로 보이지 않게 (5.5) |
+| pending 재제출 스케줄러 | 메모리 큐(10개)가 넘쳐도 job 이 버려지지 않게. 원본은 DB (5.1) |
+| 임시 파일에 쓴 뒤 원자적 이름 변경 | done 인데 파일이 없거나 쓰다 만 파일이 보이는 상태 제거 (5.4) |
+| graceful shutdown | `docker compose down` 중에도 진행 중인 생성을 마치고, 대기 작업은 pending 으로 보존 (5.5) |
+| 숫자·날짜 셀, 헤더 고정, 자동 필터, 시트 넘김 | 받은 파일을 엑셀에서 바로 정렬·합계할 수 있게, 시트 한도(1,048,576행)를 넘는 데이터도 잘리지 않게 (5.3) |
+| 적응형 폴링, 중복 클릭 방지 | 진행 중일 때만 2초 갱신해 유휴 상태의 불필요한 요청 제거 (5.7) |
+| Testcontainers 통합 테스트 | 조건부 UPDATE·시간대·스트리밍 조회는 실제 PostgreSQL 에서만 의미 있게 검증됨 (8장) |
+| CI (빌드·테스트 + compose 스모크 + 메모리 검사) | "`docker compose up --build` 한 번으로 실행"과 메모리 한도를 PR 마다 자동 확인 (8장) |
+| 측정 스크립트, k6 부하 테스트 | 메모리 일정성과 생성 중 응답성을 주장이 아닌 숫자로 확인 (7장) |
+
+---
+
+## 7. 측정 결과
 
 `scripts/benchmark.sh` 로 측정했습니다.
 
@@ -286,7 +347,7 @@ docker compose down -v
 
 ---
 
-## 7. 테스트
+## 8. 테스트
 
 ```bash
 ./gradlew test
@@ -309,7 +370,7 @@ health → 시드 10만 건 → 엑셀 생성 end-to-end → 컨테이너 메모
 
 ---
 
-## 8. 한계와 개선 방향
+## 9. 한계와 개선 방향
 
 | 한계 | 개선 방향 |
 |---|---|
@@ -321,7 +382,7 @@ health → 시드 10만 건 → 엑셀 생성 end-to-end → 컨테이너 메모
 
 ---
 
-## 9. 프로젝트 구조
+## 10. 프로젝트 구조
 
 ```
 src/main/java/com/excel
