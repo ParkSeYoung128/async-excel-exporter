@@ -25,6 +25,14 @@ RUNS="${RUNS:-5}"
 ROWS="${ROWS:-100000}"
 JOB_TIMEOUT_SECONDS="${JOB_TIMEOUT_SECONDS:-600}"
 
+# 잘못된 값으로 측정이 조용히 건너뛰어지거나 기존 건수로 측정되는 일을 막는다
+for name in RUNS ROWS JOB_TIMEOUT_SECONDS; do
+  value=$(eval "printf '%s' \"\${${name}}\"")
+  case "${value}" in
+    ''|*[!0-9]*|0) echo "${name} 는 1 이상의 정수여야 합니다: '${value}'" >&2; exit 2 ;;
+  esac
+done
+
 psql_value() {
   docker compose exec -T db psql -U exporter -d exporter -tAc "$1" | tr -d '[:space:]'
 }
@@ -91,7 +99,8 @@ if [ "${ROWS}" -gt "${current}" ]; then
     INSERT INTO orders (user_name, product_name, category, amount, status, order_date)
     SELECT o.user_name, o.product_name, o.category, o.amount, o.status, o.order_date
     FROM generate_series(1, ${need}) AS g
-    JOIN orders o ON o.id = ((g - 1) % ${current}) + 1
+    JOIN (SELECT *, row_number() OVER (ORDER BY id) AS rn FROM orders) o
+      ON o.rn = ((g - 1) % ${current}) + 1
     ORDER BY g;
     ANALYZE orders;"
 fi
@@ -127,6 +136,13 @@ for run in $(seq 1 "${RUNS}"); do
     sleep 0.5
   done
   stop_sampler
+
+  # 실패·시간 초과 뒤에 이어서 측정하면 순차 조건이 깨지고(이전 작업이 아직 실행 중일 수 있음)
+  # 일부 성공한 작업만으로 평균이 나오므로 여기서 중단한다
+  if [ "${status}" != "done" ]; then
+    echo "run ${run}: job ${job_id} 가 ${status} 상태로 끝나 측정을 중단합니다 (docker compose logs app 확인)" >&2
+    exit 1
+  fi
 
   anon_max=$(awk '$1 == "anon" && $2 + 0 > m { m = $2 + 0 } END { print m + 0 }' "${samples}")
   cache_max=$(awk '$1 == "file" && $2 + 0 > m { m = $2 + 0 } END { print m + 0 }' "${samples}")
