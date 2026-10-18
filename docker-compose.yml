@@ -47,6 +47,17 @@ services:
           cpus: '0.25'
           memory: 512M
 
+  # 부하 테스트 전용. --profile loadtest 를 지정할 때만 실행되며 docker compose up 에는 포함되지 않는다
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["loadtest"]
+    volumes:
+      - ./loadtest:/scripts:ro
+    environment:
+      BASE_URL: http://app:8080
+    depends_on:
+      - app
+
 volumes:
   db-data:
   exports:
